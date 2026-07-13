@@ -2,10 +2,11 @@ import axios from 'axios'
 
 // Point to your backend — change IP for your local network or production URL
 const BASE_URL = __DEV__
-  ? 'http://192.168.0.183:3001/api'
-  : 'https://your-production-url.com/api'
+  ? 'http://192.168.0.183:3001/api'        // local dev
+  : 'https://folio-backend-rxi4.onrender.com/api'  // production
 
 const client = axios.create({ baseURL: BASE_URL, timeout: 30000 })
+console.log(`✅ API client configured for ${BASE_URL}`)
 
 // Clerk token getter — set by TokenBridge in App.jsx after Clerk loads
 // Using a module-level variable avoids hook rules violations in axios interceptor

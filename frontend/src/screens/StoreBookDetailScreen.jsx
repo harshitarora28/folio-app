@@ -1,4 +1,4 @@
-import { useState, useEffect }        from 'react'
+import React, { useState, useEffect, useMemo } from 'react'
 import {
   View, Text, Image, TouchableOpacity, ScrollView,
   ActivityIndicator, StyleSheet, Modal, Alert,
@@ -9,7 +9,7 @@ import { useNavigation, useRoute }     from '@react-navigation/native'
 import { useStoreBook, useGetFreeBook, useCreateOrder, useVerifyAndDownload, usePurchases } from '../hooks/useStore'
 import { epubExists } from '../utils/bookStore'
 
-
+// ── DESIGN SYSTEM CONSTANTS ──────────────────────────────────────────────────
 const ACCENT = '#E8A838'
 const BG     = '#0F0E0C'
 const CARD   = '#1A1916'
@@ -21,6 +21,58 @@ const LIGHT  = '#C8BFB0'
 const GREEN  = '#5DBB8A'
 
 const BROWSER_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+
+// ── EDGE CDN PROXY HELPER ────────────────────────────────────────────────────
+function getOptimizedCoverUrl(rawUrl, width = 600) {
+  if (!rawUrl) return null;
+  const cleanUrl = rawUrl.replace(/^https?:\/\//, '');
+  return `https://wsrv.nl/?url=${encodeURIComponent(cleanUrl)}&w=${width}&output=webp&q=80&il`;
+}
+
+// ── HIGH-PERFORMANCE HIGH-AVAILABILITY IMAGE LAYER ──────────────────────────
+const OptimizedCover = React.memo(({ url, style, fallbackSize = 24 }) => {
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(false)
+
+  const imageSource = useMemo(() => ({
+    uri: url,
+    cache: 'force-cache', 
+    headers: {
+      'User-Agent': BROWSER_UA,
+      'Referer': 'https://standardebooks.org/'
+    }
+  }), [url])
+
+  if (!url || error) {
+    return (
+      <View style={[style, s.coverFallbackContainer]}>
+        <Text style={{ fontSize: fallbackSize }}>📖</Text>
+      </View>
+    )
+  }
+
+  return (
+    <View style={style}>
+      <Image 
+        source={imageSource}
+        style={StyleSheet.absoluteFill} 
+        resizeMode="cover"
+        fadeDuration={150}
+        onLoadStart={() => setLoading(true)}
+        onLoadEnd={() => setLoading(false)}
+        onError={() => {
+          setLoading(false)
+          setError(true)
+        }}
+      />
+      {loading && (
+        <View style={[StyleSheet.absoluteFill, s.coverSpinner]}>
+          <ActivityIndicator size="small" color={ACCENT} />
+        </View>
+      )}
+    </View>
+  )
+})
 
 function buildRazorpayHtml({ orderId, amount, currency, key, bookTitle }) {
   const safeTitle = (bookTitle || '').replace(/'/g, "\\'")
@@ -77,6 +129,7 @@ export default function StoreBookDetailScreen() {
   const [checkoutHtml,    setCheckoutHtml]    = useState(null)
   const [checkoutVisible, setCheckoutVisible] = useState(false)
   const [actionLoading,   setActionLoading]   = useState(false)
+  const [checkoutReady,   setCheckoutReady]   = useState(false)
   const [isDownloaded,    setIsDownloaded]    = useState(false)
 
   const getFreeBook       = useGetFreeBook()
@@ -84,13 +137,10 @@ export default function StoreBookDetailScreen() {
   const verifyAndDownload = useVerifyAndDownload()
   const { data: purchases = [] } = usePurchases()
 
-  // Check if this paid book is already purchased
   const isPurchased = purchases.some(p => p.catalogBookId === book?.id)
 
-  // Check if EPUB is already on device (free or paid)
   useEffect(() => {
     if (!book?.id) return
-    // Derive the bookId the same way useGetFreeBook does
     const slugHash = (book.id || '').replace(/\//g, '_').replace(/-/g, '').slice(0, 16)
     const bookId   = slugHash.padEnd(16, '0')
     setIsDownloaded(epubExists(bookId))
@@ -137,6 +187,7 @@ export default function StoreBookDetailScreen() {
         bookTitle: book.title,
       })
       setCheckoutHtml(html)
+      setCheckoutReady(false)   // State machine lock: hide cancel mechanics until handover
       setCheckoutVisible(true)
     } catch (err) {
       Alert.alert('Error', err?.error || 'Could not create payment order. Please try again.')
@@ -148,6 +199,9 @@ export default function StoreBookDetailScreen() {
   const handleWebViewMessage = async (event) => {
     try {
       const msg = JSON.parse(event.nativeEvent.data)
+      
+      // Handshake established: frame successfully parsed initialization script
+      if (!checkoutReady) setCheckoutReady(true)
 
       if (msg.type === 'success') {
         setCheckoutVisible(false)
@@ -178,6 +232,7 @@ export default function StoreBookDetailScreen() {
         )
       } else if (msg.type === 'dismissed') {
         setCheckoutVisible(false)
+        setCheckoutReady(false)
       } else if (msg.type === 'failed') {
         setCheckoutVisible(false)
         Alert.alert('Payment Failed', msg.error || 'Please try again.')
@@ -197,21 +252,14 @@ export default function StoreBookDetailScreen() {
       </View>
 
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={s.content}>
+        
+        {/* ── UPGRADED COVER WRAP WITH EDGE CDN PROXY (600px width) ── */}
         <View style={s.coverWrap}>
-          {book?.coverUrl
-            ? <Image 
-                source={{ 
-                  uri: book.coverUrl,
-                  headers: { 
-                    'User-Agent': BROWSER_UA,
-                    'Referer': 'https://standardebooks.org/'
-                  } 
-                }} 
-                style={s.cover} 
-                resizeMode="cover" 
-              />
-            : <View style={[s.cover, s.coverFallback]}><Text style={{ fontSize: 56 }}>📖</Text></View>
-          }
+          <OptimizedCover 
+            url={getOptimizedCoverUrl(book?.coverUrl, 600)} 
+            style={s.cover} 
+            fallbackSize={56} 
+          />
         </View>
 
         <View style={s.meta}>
@@ -251,7 +299,6 @@ export default function StoreBookDetailScreen() {
         </View>
 
         <View style={s.ctaArea}>
-          {/* ── Already downloaded — just open it ─────────────────────────── */}
           {isDownloaded ? (
             <TouchableOpacity
               style={[s.ctaBtn, s.ctaBtnOwned]}
@@ -265,7 +312,6 @@ export default function StoreBookDetailScreen() {
             </TouchableOpacity>
 
           ) : book?.isPaid ? (
-            /* ── Paid book — show Buy or Purchased ─────────────────────────── */
             isPurchased ? (
               <TouchableOpacity
                 style={[s.ctaBtn, isBusy && s.ctaBtnDisabled]}
@@ -296,7 +342,6 @@ export default function StoreBookDetailScreen() {
             )
 
           ) : (
-            /* ── Free book ─────────────────────────────────────────────────── */
             <TouchableOpacity
               style={[s.ctaBtn, (isBusy || !book?.epubUrl) && s.ctaBtnDisabled]}
               onPress={() => getFreeBook.mutate({
@@ -316,7 +361,7 @@ export default function StoreBookDetailScreen() {
             </TouchableOpacity>
           )}
 
-                    <Text style={s.ctaDisclaimer}>
+          <Text style={s.ctaDisclaimer}>
             {book?.isPaid
               ? 'Secure payment via Razorpay · Test mode'
               : 'Public domain · Standard Ebooks'}
@@ -324,16 +369,30 @@ export default function StoreBookDetailScreen() {
         </View>
       </ScrollView>
 
+      {/* ── SECURE TRANSACTIONAL WEBVIEW LAYER ── */}
       <Modal
         visible={checkoutVisible}
         animationType="slide"
-        onRequestClose={() => setCheckoutVisible(false)}
+        onRequestClose={() => {
+          // Hardware Back Button Intercept: State Machine Check
+          if (checkoutReady) {
+            setCheckoutVisible(false)
+            setCheckoutReady(false)
+          }
+        }}
       >
         <SafeAreaView style={{ flex: 1, backgroundColor: BG }}>
           <View style={s.checkoutHeader}>
-            <TouchableOpacity onPress={() => setCheckoutVisible(false)}>
-              <Text style={{ color: MUTED, fontSize: 14 }}>✕ Cancel</Text>
-            </TouchableOpacity>
+            {checkoutReady ? (
+              <TouchableOpacity onPress={() => {
+                setCheckoutVisible(false)
+                setCheckoutReady(false)
+              }}>
+                <Text style={{ color: MUTED, fontSize: 14 }}>✕ Cancel</Text>
+              </TouchableOpacity>
+            ) : (
+              <View style={{ width: 60 }} />
+            )}
             <Text style={{ color: TEXT, fontSize: 15, fontFamily: 'Georgia' }}>Checkout</Text>
             <View style={{ width: 60 }} />
           </View>
@@ -360,7 +419,18 @@ const s = StyleSheet.create({
   content:     { paddingBottom: 60 },
   coverWrap:   { alignItems: 'center', paddingVertical: 24 },
   cover:       { width: 160, height: 240, borderRadius: 14, overflow: 'hidden', borderWidth: 1, borderColor: BORDER },
-  coverFallback: { backgroundColor: CARD, alignItems: 'center', justifyContent: 'center' },
+  
+  // Added spinner & fallback styles for the detail cover
+  coverSpinner: {
+    backgroundColor: 'rgba(26,25,22,0.4)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  coverFallbackContainer: {
+    backgroundColor: ELV,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
 
   meta:    { paddingHorizontal: 24 },
   title:   { color: TEXT, fontSize: 22, fontFamily: 'Georgia', textAlign: 'center', marginBottom: 6 },
@@ -385,7 +455,7 @@ const s = StyleSheet.create({
   ctaBtn:        { backgroundColor: ACCENT, borderRadius: 14, paddingVertical: 16, alignItems: 'center' },
   ctaBtnDisabled:{ opacity: 0.5 },
   ctaBtnText:    { color: BG, fontWeight: '700', fontSize: 15 },
-  ctaBtnOwned:   { backgroundColor: '#2D6B4F' },  // green — already owned
+  ctaBtnOwned:   { backgroundColor: '#2D6B4F' },
   ctaDisclaimer: { color: MUTED, fontSize: 11, textAlign: 'center', marginTop: 10 },
 
   checkoutHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: BORDER },

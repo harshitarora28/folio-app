@@ -29,6 +29,13 @@ const SORT_OPTIONS = [
   { label: 'Newest',  value: 'newest'  },
 ]
 
+// ── EDGE CDN PROXY HELPER ────────────────────────────────────────────────────
+function getOptimizedCoverUrl(rawUrl, width = 300) {
+  if (!rawUrl) return null;
+  const cleanUrl = rawUrl.replace(/^https?:\/\//, '');
+  return `https://wsrv.nl/?url=${encodeURIComponent(cleanUrl)}&w=${width}&output=webp&q=80&il`;
+}
+
 // ── HIGH-PERFORMANCE HIGH-AVAILABILITY IMAGE LAYER ──────────────────────────
 const OptimizedCover = React.memo(({ url, style }) => {
   const [loading, setLoading] = useState(true)
@@ -83,7 +90,7 @@ const BookCard = React.memo(({ book, onPress, width = 120 }) => {
       style={[s.card, { width }]}
     >
       <View style={[s.cardCover, { width, height: width * 1.5 }]}>
-        <OptimizedCover url={book.coverUrl} style={StyleSheet.absoluteFill} />
+        <OptimizedCover url={getOptimizedCoverUrl(book.coverUrl, 300)} style={StyleSheet.absoluteFill} />
         <View style={book.isPaid ? s.paidBadge : s.freeBadge}>
           <Text style={s.badgeText}>{book.isPaid ? `₹${book.price / 100}` : 'FREE'}</Text>
         </View>
@@ -102,7 +109,7 @@ const GridCard = React.memo(({ book, onPress }) => {
       style={s.gridCard}
     >
       <View style={s.gridCover}>
-        <OptimizedCover url={book.coverUrl} style={StyleSheet.absoluteFill} />
+        <OptimizedCover url={getOptimizedCoverUrl(book.coverUrl, 350)} style={StyleSheet.absoluteFill} />
         <View style={book.isPaid ? s.paidBadge : s.freeBadge}>
           <Text style={s.badgeText}>{book.isPaid ? `₹${book.price / 100}` : 'FREE'}</Text>
         </View>
