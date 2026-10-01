@@ -2,8 +2,6 @@
 
 **Folio is an offline-first Android EPUB reading companion with progress-aware AI assistance.** It lets readers import and read EPUB files locally, resume across sessions, organise books and highlights, and ask for contextual help without uploading the book itself by default.
 
-Built as a summer-internship project by **Harshit Arora**.
-
 ## The problem
 
 Reading apps are good at remembering a page number, but they do little to help when a reader returns to a dense book after a break. Existing AI features can also reveal future plot points or require a user to hand over their library.
@@ -42,6 +40,33 @@ Text and image features have defined fallback behaviour. If an image provider is
 
 ## Architecture
 
+```mermaid
+flowchart TB
+    Mobile["Folio mobile client\nReact Native + Expo"]
+    Local["On-device EPUB storage\nContent-derived book ID"]
+    Reader["Reader engine\nepub.js in WebView"]
+    API["REST API\nNode.js + Express"]
+    Auth["Clerk\nAuthentication"]
+    DB[("PostgreSQL\nReader state")]
+    Cache[("Redis\nAI response cache")]
+    AI["Gemini\nText assistance"]
+    Images["Image providers\nHugging Face / Cloudflare"]
+    Storage["Supabase Storage\nOptional EPUB backup"]
+    Payments["Razorpay\nTest-mode checkout"]
+
+    Mobile --> Local
+    Mobile --> Reader
+    Mobile -->|"Bearer token + HTTPS"| API
+    Mobile --> Auth
+    API --> Auth
+    API --> DB
+    API --> Cache
+    API --> AI
+    API --> Images
+    API --> Storage
+    API --> Payments
+```
+
 ```text
 React Native / Expo client
   |-- Local EPUB storage and content-derived book identity
@@ -55,6 +80,37 @@ React Native / Expo client
                                  |-- Image-generation providers
                                  |-- Supabase object storage (opt-in backup)
                                  +-- Razorpay test-mode payments
+```
+
+## Core workflow
+
+```mermaid
+sequenceDiagram
+    participant R as Reader
+    participant M as Folio mobile app
+    participant E as EPUB WebView
+    participant A as Folio API
+    participant C as Redis cache
+    participant G as AI provider
+    participant P as PostgreSQL
+
+    R->>M: Import EPUB
+    M->>M: Derive content-based book ID
+    M->>E: Open local EPUB
+    M->>A: Register book metadata and sync progress
+    A->>P: Persist user-scoped state
+    R->>M: Select passage and request assistance
+    M->>A: Send book ID, action, passage and progress
+    A->>C: Look up exact-match cached response
+    alt Cache hit
+        C-->>A: Cached answer
+    else Cache miss
+        A->>G: Generate progress-aware response
+        G-->>A: Answer
+        A->>C: Cache answer
+    end
+    A-->>M: Assistance response
+    M-->>R: Display explanation, recap or visualisation
 ```
 
 ## Technology stack
@@ -72,6 +128,21 @@ React Native / Expo client
 | Styling | NativeWind and Tailwind CSS |
 
 ## Repository layout
+
+```mermaid
+flowchart LR
+    Root["folio-app"]
+    Root --> Frontend["frontend\nExpo mobile app"]
+    Root --> Backend["backend\nExpress API"]
+    Root --> Compose["docker-compose.yml\nLocal service composition"]
+    Frontend --> Screens["screens\nLibrary, reader, chat, catalogue, profile"]
+    Frontend --> Hooks["hooks\nData fetching and mutations"]
+    Frontend --> ClientUtils["utils\nEPUB bridge, hashing, local storage"]
+    Backend --> Routes["routes\nREST modules"]
+    Backend --> Prisma["prisma\nSchema and migrations"]
+    Backend --> Services["services\nCatalogue seeding"]
+    Backend --> Controllers["controllers\nAI orchestration"]
+```
 
 ```text
 .
@@ -190,4 +261,4 @@ All application routes are mounted under `/api`; all except `/health` require an
 
 ## Project report
 
-The accompanying summer-internship report describes the motivation, design decisions, implementation, evaluation and future scope in detail.
+The accompanying technical report describes the motivation, design decisions, implementation, evaluation and future scope in detail.
