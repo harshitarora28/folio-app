@@ -127,6 +127,53 @@ sequenceDiagram
 | Storage and payments | Supabase Storage, Razorpay |
 | Styling | NativeWind and Tailwind CSS |
 
+## Full-stack component guide
+
+### Mobile application
+
+| Component | Responsibility |
+| --- | --- |
+| **Expo and React Native** | Delivers the Android application, native UI and development workflow. |
+| **React Navigation** | Controls the authentication gate, bottom tabs and stack navigation between the library, reader, chat, catalogue and profile screens. |
+| **EPUB reader WebView** | Hosts `epub.js` for standards-aware EPUB rendering, pagination, in-book search, themes and CFI locations. |
+| **EPUB bridge** | Passes typed messages between the React Native screen and the WebView for page changes, selection, highlights and reading progress. |
+| **Local book store** | Imports EPUB files, derives the book identity, keeps files in the app sandbox and stores local metadata. |
+| **Expo Crypto and File System** | Computes the SHA-256-based book identifier and manages book files without sending them to the backend by default. |
+| **Zustand** | Holds local, short-lived reader and interface state. |
+| **TanStack Query** | Fetches server state, caches API responses on the device and invalidates data after mutations. |
+| **Axios API client** | Attaches the authenticated Clerk token and centralises API error handling. |
+| **Clerk Expo and Secure Store** | Manages sign-in sessions and keeps authentication tokens in encrypted device storage. |
+| **NativeWind** | Provides utility-class styling for the mobile interface. |
+
+### Backend service
+
+| Component | Responsibility |
+| --- | --- |
+| **Express server** | Hosts the REST API, health endpoint, middleware pipeline and route modules. |
+| **Clerk middleware** | Verifies bearer tokens against Clerk and resolves the authenticated application user. |
+| **Prisma ORM** | Defines the relational schema, runs migrations and provides database access. |
+| **PostgreSQL** | Persists users, books, reading positions, highlights, shelves, summaries, chat sessions, catalogue data and purchases. |
+| **Redis** | Caches repeated AI and image requests and supports responsive repeat interactions. |
+| **AI controller** | Orchestrates passage explanation, summaries, definitions, recaps, chat and scene-description generation. |
+| **Image generation path** | Races primary image providers and falls back to an alternate provider or text-only scene description. |
+| **Storage routes** | Support explicit EPUB backup and short-lived signed download URLs through Supabase Storage. |
+| **Catalogue seeder** | Harvests and refreshes Standard Ebooks catalogue data while retaining the prior catalogue if refresh fails. |
+| **Purchase routes** | Create Razorpay orders, resolve prices server-side and verify HMAC payment signatures. |
+| **Security middleware** | Applies Helmet headers, CORS policy, request logging, payload validation and API rate limits. |
+
+### Data boundaries
+
+```mermaid
+flowchart LR
+    EPUB["EPUB file and rendered text"] -->|"Stays on device by default"| Device["Folio mobile app"]
+    Device -->|"Book ID, metadata, CFI, percentage, highlights"| API["Folio API"]
+    API --> DB[("PostgreSQL")]
+    API --> Cache[("Redis")]
+    Device -. "Optional backup only" .-> ObjectStore["Supabase Storage"]
+```
+
+This separation is deliberate: the service needs enough information to synchronise reader state, but it does not need the full EPUB file for normal reading and assistance workflows.
+
 ## Repository layout
 
 ```mermaid
